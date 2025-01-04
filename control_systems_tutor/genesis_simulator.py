@@ -115,7 +115,7 @@ class GenesisSimulator:
             
         elif system_type == "disturbance_rejection":
             joint_positions = np.zeros(self.num_joints, dtype=np.float32)
-            joint_positions[0] = 0.5  # Set first joint to 0.5 radians
+            joint_positions[0] = 0.5  # set first joint to 0.5 radians
             joint_positions = gs.tensor(joint_positions)
             self.robot.set_dofs_position(joint_positions)
             return {
