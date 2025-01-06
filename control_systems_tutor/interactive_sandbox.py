@@ -7,6 +7,7 @@ from genesis_simulator import GenesisSimulator
 from chat_interpreter import SimulationInterpreter
 import io
 import platform
+import os
 
 def create_3d_visualization(positions):
     positions = np.array(positions)
@@ -400,64 +401,73 @@ def create_interactive_sandbox():
                 
                 # st.subheader("Demo Description")
                 # st.write(results['description'])
-        st.write('--------------')
-        st.subheader("Chat")
-        st.info(f"Current Demo: {demo_type}")
         
-        if not st.session_state.openai_api_key:
-            st.warning("Please enter your OpenAI API key in the sidebar to enable chat functionality.")
-        else:
-            if 'chat_history' not in st.session_state:
-                st.session_state.chat_history = []
+        
+            st.write('--------------')
+            st.subheader("Chat")
+            st.info(f"Current Demo: {demo_type}")
             
-            chat_container = st.container(height=600, border=True)
-            with chat_container:
-                for message in st.session_state.chat_history:
-                    if message["role"] == "user":
-                        st.markdown(f'<p style="color: #2E86C1;"><b>You:</b> {message["content"]}</p>', unsafe_allow_html=True)
+            if not st.session_state.openai_api_key:
+                st.warning("Please enter your OpenAI API key in the sidebar to enable chat functionality.")
+            else:
+                if 'chat_history' not in st.session_state:
+                    st.session_state.chat_history = []
+                
+                chat_container = st.container(height=600, border=True)
+                user_question = st.text_input("Ask a question about the simulation:", key="sim_question")
+                
+                display_demo_video(demo_type)
+                with chat_container:
+                    for message in st.session_state.chat_history:
+                        if message["role"] == "user":
+                            st.markdown(f'<p style="color: #2E86C1;"><b>You:</b> {message["content"]}</p>', unsafe_allow_html=True)
+                        else:
+                            st.markdown(f'<p><b>Assistant:</b> {message["content"]}</p>', unsafe_allow_html=True)
+                
+                
+                
+                if user_question and user_question != st.session_state.get('last_question', ''):
+                    st.session_state.last_question = user_question
+                    
+                    if st.session_state.simulation_results:
+                        full_trajectory = np.array(st.session_state.simulation_results['trajectory'])
+                        full_time = np.array(st.session_state.simulation_results['time'])
+                        
+                        # sample only 100 points
+                        num_samples = 100
+                        indices = np.linspace(0, len(full_trajectory) - 1, num_samples, dtype=int)
+                        
+                        simulation_data = {
+                            'initial_state': {
+                                'position': st.session_state.simulation_results['initial_state']['position'],
+                                'joint_positions': st.session_state.simulation_results['initial_state']['joint_positions'][:2]  # Only first two joints
+                            },
+                            'final_state': {
+                                'position': st.session_state.simulation_results['final_state']['position'],
+                                'joint_positions': st.session_state.simulation_results['final_state']['joint_positions'][:2]  # Only first two joints
+                            },
+                            'trajectory': full_trajectory[indices].tolist(),
+                            'time': full_time[indices].tolist(),
+                            'error': st.session_state.simulation_results['error'][-10:],  # only last 10 error
+                            'description': st.session_state.simulation_results['description'],
+                            'controller_params': st.session_state.simulation_results['controller_params'],
+                            'demo_type': st.session_state.simulation_results['demo_type']
+                        }
                     else:
-                        st.markdown(f'<p><b>Assistant:</b> {message["content"]}</p>', unsafe_allow_html=True)
-            
-            user_question = st.text_input("Ask a question about the simulation:", key="sim_question")
-            
-            if user_question and user_question != st.session_state.get('last_question', ''):
-                st.session_state.last_question = user_question
-                
-                if st.session_state.simulation_results:
-                    full_trajectory = np.array(st.session_state.simulation_results['trajectory'])
-                    full_time = np.array(st.session_state.simulation_results['time'])
-                    
-                    # sample only 100 points
-                    num_samples = 100
-                    indices = np.linspace(0, len(full_trajectory) - 1, num_samples, dtype=int)
-                    
-                    simulation_data = {
-                        'initial_state': {
-                            'position': st.session_state.simulation_results['initial_state']['position'],
-                            'joint_positions': st.session_state.simulation_results['initial_state']['joint_positions'][:2]  # Only first two joints
-                        },
-                        'final_state': {
-                            'position': st.session_state.simulation_results['final_state']['position'],
-                            'joint_positions': st.session_state.simulation_results['final_state']['joint_positions'][:2]  # Only first two joints
-                        },
-                        'trajectory': full_trajectory[indices].tolist(),
-                        'time': full_time[indices].tolist(),
-                        'error': st.session_state.simulation_results['error'][-10:],  # only last 10 error
-                        'description': st.session_state.simulation_results['description'],
-                        'controller_params': st.session_state.simulation_results['controller_params'],
-                        'demo_type': st.session_state.simulation_results['demo_type']
-                    }
-                else:
-                    simulation_data = {
-                        'message': 'No simulation has been run yet. Please run a simulation first.'
-                    }
+                        simulation_data = {
+                            'message': 'No simulation has been run yet. Please run a simulation first.'
+                        }
 
-                # print("Simulation data for chatbot:", simulation_data)
-                response = chat_interpreter.interpret_simulation(simulation_data, user_question)
+                    # print("Simulation data for chatbot:", simulation_data)
+                    response = chat_interpreter.interpret_simulation(simulation_data, user_question)
+                    
+                    st.session_state.chat_history.append({"role": "user", "content": user_question})
+                    st.session_state.chat_history.append({"role": "assistant", "content": response})
+
+                    
+                    st.rerun()
+
                 
-                st.session_state.chat_history.append({"role": "user", "content": user_question})
-                st.session_state.chat_history.append({"role": "assistant", "content": response})
-                st.rerun()
     
     elif mode == "Free Exploration":
         st.header("Root Locus Analysis")
@@ -688,6 +698,77 @@ def create_interactive_sandbox():
                 st.session_state.root_locus_chat_history.append({"role": "assistant", "content": response})
                 
                 st.rerun()
+
+def display_demo_video(demo_type):
+    """Display a relevant demo video based on the demo type"""
+    st.write('--------------')
+    st.subheader("Real world robot control")
+    
+    # Get absolute path to video directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    video_file = os.path.join(current_dir, "static", "videos", "control_your_robot.mp4")
+    
+    try:
+        with open(video_file, 'rb') as video:
+            video_bytes = video.read()
+        st.video(video_bytes)
+    
+        st.subheader("Ask about Robot Control")
+        user_question = st.text_input("Ask any question about robot control:", key="robot_control_question")
+        
+        if user_question:
+            st.write("🤖 Assistant:")
+            st.write("""
+            Let me explain what's happening with the robot arm control:
+
+            1. **Coordinate Systems**:
+               - **Base Frame** (World Coordinates):
+                 - Origin: Center of robot base
+                 - X-axis: Forward direction
+                 - Y-axis: Left/Right
+                 - Z-axis: Up/Down
+               - **End-Effector Frame**:
+                 - Tracks the tool/gripper position
+                 - Moves relative to base frame
+            
+            2. **Current Motion Analysis**:
+               - Robot starts at home position (0, 0, 0)
+               - Moves through planned trajectory points
+               - Each joint rotates to achieve desired end-effector position
+               - PID controller maintains smooth motion:
+                 ```python
+                 error = target_position - current_position
+                 control = Kp*error + Ki∫error + Kd(d/dt)error
+                 ```
+            
+            3. **Control Parameters**:
+               - **Position Control**:
+                 - Kp (Proportional): Affects direct position response
+                 - Ki (Integral): Reduces steady-state error
+                 - Kd (Derivative): Dampens oscillations
+               
+            4. **Motion Interpretation**:
+               - **Smooth Movement**: 
+                 - Trajectory interpolation between points
+                 - Acceleration/deceleration profiles
+                 - Joint velocity limits enforced
+               - **Error Correction**:
+                 - Real-time position feedback
+                 - Continuous adjustment to minimize error
+                 - Stability maintained through damping
+            
+            5. **Performance Metrics**:
+               - Position Error: Distance from target
+               - Settling Time: Time to reach steady state
+               - Overshoot: Maximum deviation beyond target
+               - Steady-State Error: Final position offset
+            
+            The robot is currently using these control principles to maintain precise positioning while ensuring smooth, stable motion. The PID controller continuously adjusts joint torques based on the error between desired and actual positions.
+            """)
+            
+    except FileNotFoundError:
+        st.warning(f"Video file not found: {video_file}")
+        st.info("Please ensure the video file is placed in the correct directory: static/videos/control_your_robot.mp4")
 
 def main():
     create_interactive_sandbox()
